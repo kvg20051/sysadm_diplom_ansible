@@ -1,0 +1,23 @@
+---
+# vars file for diplom_sysadm
+#  vars:
+    wiki_db_name: "my_wiki"
+    wiki_db_user: "wikiuser"
+    wiki_db_password: "secure_password"
+    wiki_version: "1.42.1"
+    wiki_site_name: "MyWiki"
+    wiki_admin_user: "admin"
+    wiki_admin_password: "admin_password"
+    wiki_admin_email: "admin@example.com"
+    pg_cluster_nodes:
+      - "std-ext-010-64.praktikum-services.tech"
+      - "std-ext-010-65.praktikum-services.tech"
+    web_servers:
+      - "std-ext-010-62.praktikum-services.tech"
+      - "std-ext-010-63.praktikum-services.tech"
+    load_balancer: "std-ext-010-61.praktikum-services.tech"
+    database_primary: "std-ext-010-64.praktikum-services.tech"
+    database_standby: "std-ext-010-65.praktikum-services.tech"
+
+    backup_server: "std-ext-010-66.praktikum-services.tech"
+    backup_user: "backupuser"

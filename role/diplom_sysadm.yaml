@@ -1,0 +1,6 @@
+---
+- name: Deploy MediaWiki architecture with Nginx and PostgreSQL cluster
+  hosts: all
+  become: true
+  roles:
+    - role: diplom_sysadm

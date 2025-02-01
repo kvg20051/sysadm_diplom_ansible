@@ -1,0 +1,40 @@
+#!/bin/bash
+# 2
+# Параметры базы данных
+DB_NAME="{{ wiki_db_name }}"
+DB_USER="{{ wiki_db_user }}"
+DB_HOST="localhost"
+BACKUP_DIR="/var/backups/mediawiki"
+BACKUP_FILE="mediawiki_db_$(date +%Y-%m-%d_%H-%M-%S).sql.gz"
+
+# Параметры удаленного сервера
+REMOTE_USER="{{ backup_user }}"
+REMOTE_HOST="{{ backup_server }}"
+REMOTE_DIR="/home/kvg"
+BACKUP_USER="{{ backup_user }}"
+
+# Создаем директорию для бэкапов, если она не существует
+sudo mkdir -p "$BACKUP_DIR"
+sudo chown "$BACKUP_USER":"$BACKUP_USER" "$BACKUP_DIR"
+
+# Делаем дамп базы данных и сжимаем его
+PGPASSWORD="secure_password" pg_dump -U "$DB_USER" -h "$DB_HOST" "$DB_NAME" | gzip > "$BACKUP_DIR/$BACKUP_FILE"
+
+# Проверяем успешность дампа
+if [[ $? -eq 0 ]]; then
+    echo "Резервное копирование базы данных MediaWiki успешно выполнено: $BACKUP_DIR/$BACKUP_FILE"
+
+#    # Копируем бэкап на удаленный сервер
+#    scp "$BACKUP_DIR/$BACKUP_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR"
+#
+#    # Проверяем успешность копирования
+#    if [[ $? -eq 0 ]]; then
+#        echo "Бэкап успешно передан на удаленный сервер: $REMOTE_HOST:$REMOTE_DIR"
+#    else
+#        echo "Ошибка передачи бэкапа на удаленный сервер!" >&2
+#        exit 2
+#    fi
+else
+    echo "Ошибка резервного копирования базы данных!" >&2
+    exit 1
+fi

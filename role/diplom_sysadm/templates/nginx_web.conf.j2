@@ -1,0 +1,30 @@
+server {
+    listen 80;
+    server_name {{ inventory_hostname }}; # Use the hostname of the web server
+
+    root /var/www/html/mediawiki;
+    index index.php index.html index.htm;
+
+    access_log /var/log/nginx/mediawiki_access.log;
+    error_log /var/log/nginx/mediawiki_error.log;
+
+    location / {
+        try_files $uri $uri/ /index.php;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass unix:/var/run/php/php-fpm.sock;
+        fastcgi_index index.php;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires max;
+        log_not_found off;
+    }
+
+    location ~ /\.ht {
+        deny all;
+    }
+}

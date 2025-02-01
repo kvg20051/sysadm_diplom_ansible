@@ -1,0 +1,21 @@
+# Template: templates/pg_hba.conf.j2
+# PostgreSQL Host-Based Authentication Configuration
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+
+# Allow local connections
+local   all             all                                     trust
+
+# Allow connections from application user
+host    {{ wiki_db_name }}	{{ wiki_db_user }}	0.0.0.0/0           md5
+
+# Allow replication role access
+#host    replication     replicator       {{ pg_cluster_nodes | join(',') }}   md5
+#host    replication     replicator       {{ pg_cluster_nodes | join(',') }}   scram-sha-256
+host    replication     replicator       0.0.0.0/0		trust
+#host  replication   repuser   10.128.0.62/32      scram-sha-256
+
+# Allow administrative access for local IPs
+host    all             all             127.0.0.1/32            trust
+host    all             all             ::1/128                 trust
+
+host    all             all             0.0.0.0/0               trust

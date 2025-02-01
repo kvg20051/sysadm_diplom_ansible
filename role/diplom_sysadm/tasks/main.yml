@@ -1,0 +1,267 @@
+---
+# tasks file for diplom_sysadm
+#  tasks:
+    - name: Install necessary packages on Web servers
+      when: inventory_hostname in web_servers
+      apt:
+        name:
+          - nginx
+          - php-fpm
+          - php-cli
+          - php-pgsql
+          - php-intl
+          - php-apcu
+          - unzip
+          - php
+          - php-mbstring
+          - php-xml
+          - php-curl
+        state: present
+        update_cache: yes
+
+    - name: Install necessary packages on Database servers
+      when: inventory_hostname in pg_cluster_nodes
+      apt:
+        name:
+          - php-fpm
+          - php-cli
+          - php-pgsql
+          - php-intl
+          - php-apcu
+          - unzip
+          - php
+          - php-mbstring
+          - php-xml
+          - php-curl
+        state: present
+        update_cache: yes
+
+    - name: Install necessary packages on Load balancer
+      when: inventory_hostname == load_balancer
+      apt:
+        name:
+          - nginx
+          - php-fpm
+          - php-cli
+          - php-pgsql
+          - php-intl
+          - php-apcu
+          - unzip
+          - php
+          - php-mbstring
+          - php-xml
+          - php-curl
+        state: present
+        update_cache: yes
+
+    - name: Configure load balancer (nginx)
+      when: inventory_hostname == load_balancer
+      block:
+        - name: Install and configure Nginx load balancer
+          template:
+            src: templates/nginx_lb.conf.j2
+            dest: /etc/nginx/nginx.conf
+
+        - name: Restart Nginx on load balancer
+          service:
+            name: nginx
+            state: restarted
+
+    - name: Configure web servers
+      when: inventory_hostname in web_servers
+      block:
+        - name: Download MediaWiki
+          get_url:
+            url: "https://releases.wikimedia.org/mediawiki/1.42/mediawiki-{{ wiki_version }}.tar.gz"
+            dest: /tmp/mediawiki.tar.gz
+
+        - name: Extract MediaWiki
+          unarchive:
+            src: /tmp/mediawiki.tar.gz
+            dest: /var/www/html/
+            remote_src: yes
+
+        - name: Rename MediaWiki directory
+          command:
+            cmd: mv /var/www/html/mediawiki-{{ wiki_version }} /var/www/html/mediawiki
+          args:
+            creates: /var/www/html/mediawiki
+
+        - name: Set permissions for MediaWiki
+          file:
+            path: /var/www/html/mediawiki
+            owner: www-data
+            group: www-data
+            recurse: yes
+
+        - name: Configure Nginx for MediaWiki
+          template:
+            src: templates/nginx_web.conf.j2
+            dest: /etc/nginx/sites-available/mediawiki
+
+        - name: Enable MediaWiki site in Nginx
+          file:
+            src: /etc/nginx/sites-available/mediawiki
+            dest: /etc/nginx/sites-enabled/mediawiki
+            state: link
+
+        - name: Remove default Nginx site
+          file:
+            path: /etc/nginx/sites-enabled/default
+            state: absent
+
+        - name: Restart Nginx on web servers
+          service:
+            name: nginx
+            state: restarted
+
+##################################################################
+#  Configure PostgreSQL cluster
+    - name: Configure PostgreSQL cluster
+      when: inventory_hostname in pg_cluster_nodes
+      block:
+
+        - name: Install PostgreSQL 14
+          apt:
+            name:
+              - postgresql-14
+            state: present
+
+        - name: Ensure PostgreSQL service is started
+          service:
+            name: postgresql
+            state: started
+            enabled: true
+
+        - name: Configure PostgreSQL replication
+          template:
+            src: templates/postgresql.conf.j2
+            dest: /etc/postgresql/14/main/postgresql.conf
+
+        - name: Configure PostgreSQL pg_hba.conf
+          template:
+            src: templates/pg_hba.conf.j2
+            dest: /etc/postgresql/14/main/pg_hba.conf
+
+        - name: Restart PostgreSQL
+          service:
+            name: postgresql
+            state: restarted
+
+        - name: Setup primary node (only on db1)
+          when: inventory_hostname == "std-ext-010-64.praktikum-services.tech"
+          block:
+            - name: Drop existing database if exists
+              shell: sudo -u postgres psql -c "DROP DATABASE IF EXISTS {{ wiki_db_name }};"
+              args:
+                warn: false
+
+            - name: Initialize database cluster
+              shell: |
+                sudo -u postgres psql -c "CREATE DATABASE {{ wiki_db_name }};"
+                sudo -u postgres psql -c "CREATE USER {{ wiki_db_user }} WITH PASSWORD '{{ wiki_db_password }}';"
+                sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{ wiki_db_name }} TO {{ wiki_db_user }};"
+              args:
+                warn: false
+
+            - name: Drop replication role if exists
+              shell: sudo -u postgres psql -c "DROP ROLE IF EXISTS replicator;"
+              args:
+                warn: false
+
+            - name: Allow replication role
+              shell: |
+                sudo -u postgres psql -c "CREATE ROLE replicator REPLICATION LOGIN PASSWORD '{{ wiki_db_password }}';"
+              args:
+                warn: false
+
+        - name: Setup standby node (only on db2)
+          when: inventory_hostname == "std-ext-010-65.praktikum-services.tech"
+          block:
+            - name: Stop PostgreSQL service
+              service:
+                name: postgresql
+                state: stopped
+
+            - name: Clone primary database
+              shell: |
+                sudo rm -rf /var/lib/postgresql/14/main
+                sudo mkdir -p /var/lib/postgresql/14/main
+                sudo chown postgres:postgres /var/lib/postgresql/14/main
+                sudo chmod 700 /var/lib/postgresql/14/main
+                sudo -u postgres pg_basebackup -h {{ database_primary }} -D /var/lib/postgresql/14/main -U replicator -P -v -R
+              args:
+                warn: false
+
+            - name: Start PostgreSQL service
+              service:
+                name: postgresql
+                state: started
+
+#######################################################################################
+# copy backup scripts
+
+    - name: Deploy content backup script to /usr/bin
+      when: inventory_hostname in web_servers
+      template:
+        src: templates/backup_fs.sh.j2
+        dest: /usr/bin/backup_fs.sh
+        mode: '0755'
+        owner: backupuser
+        group: backupuser
+
+
+    - name: Setting up cron job to run content backup script
+      when: inventory_hostname in web_servers
+      cron:
+        name: "Run backup script"
+        minute: "2"
+#        hour: "2"
+        job: "/usr/bin/backup_fs.sh"
+        user: backupuser
+        state: present
+#sudo crontab -u backupuser -l
+
+    - name: Deploy database backup script to /usr/bin
+      when: inventory_hostname in pg_cluster_nodes
+      template:
+        src: templates/backup_db.sh.j2
+        dest: /usr/bin/backup_db.sh
+        mode: '0755'
+        owner: backupuser
+        group: backupuser
+
+    - name: Setting up cron job to run Database backup script
+      when: inventory_hostname in pg_cluster_nodes
+      cron:
+        name: "Run backup script"
+        minute: "15"
+#        hour: "3"
+        job: "/usr/bin/backup_db.sh"
+        user: backupuser
+        state: present
+#sudo crontab -u backupuser -l
+
+
+#########################################################################################
+# LocalSettings.php.j2
+
+    - name: Deploy LocalSettings.php
+      when: inventory_hostname in web_servers
+      template:
+        src: templates/LocalSettings.php.j2
+        dest: /var/www/html/mediawiki/LocalSettings.php
+        owner: www-data
+        group: www-data
+#        mode: '0755'
+
+###########################################################################################
+
+    - name: Notify user to complete MediaWiki setup
+      when: inventory_hostname == load_balancer
+      debug:
+        msg: |
+          Deployment is complete.
+          Visit your load balancer to access MediaWiki
+          http://{{ load_balancer }}
+
