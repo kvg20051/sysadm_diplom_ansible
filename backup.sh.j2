@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# List of servers to pull data from
+SERVERS=("{{ web_server_1 }}" "{{ web_server_2 }}" "{{ database_primary }}" "{{ database_standby }}")
+BACKUP_USER="{{ backup_user }}"
+
+# Destination directory for backup
+
+BACKUP_DIR="/var/backups/"
+
+# Source path on the remote servers
+SOURCE_PATH="/var/backups/mediawiki/*"
+
+# Loop through each server and use rsync over SSH to copy files
+for SERVER in "${SERVERS[@]}"; do
+# Создаем директорию для бэкапов, если она не существует
+        sudo mkdir -p ${BACKUP_DIR}/${SERVER}
+        sudo chown $BACKUP_USER":"$BACKUP_USER ${BACKUP_DIR}/${SERVER}
+#  rsync -avz --delete -e ssh $BACKUP_USER@$SERVER:$SOURCE_PATH ${BACKUP_DIR}/${SERVER}
+#  rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" $BACKUP_USER@$SERVER:$SOURCE_PATH ${BACKUP_DIR}/${SERVER}
+	rsync -avz --remove-source-files --delete -e "ssh -o StrictHostKeyChecking=no" $BACKUP_USER@$SERVER:$SOURCE_PATH ${BACKUP_DIR}/${SERVER}
+done
